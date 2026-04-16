@@ -61,7 +61,7 @@ It looks like `abc123@group.calendar.google.com`. For your primary calendar, use
 Copy the example env file and fill in your values:
 
 ```bash
-cp infra/.env.example infra/.env
+cp .env.example .env
 ```
 
 | Variable | Description |
@@ -85,8 +85,6 @@ cp infra/.env.example infra/.env
 ### 4. Deploy
 
 ```bash
-docker volume create calendar_sync_data
-cd infra
 docker compose up -d
 ```
 
@@ -95,6 +93,8 @@ Check the logs to verify the first sync:
 ```bash
 docker logs -f calendar-sync
 ```
+
+The web UI will be available at `http://localhost:8080`.
 
 ## Web UI
 
