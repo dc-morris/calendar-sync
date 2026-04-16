@@ -44,7 +44,7 @@ CREATE INDEX IF NOT EXISTS idx_pending_target ON pending_changes(target_side, ev
 
 class SyncDB:
     def __init__(self, db_path: str):
-        self.conn = sqlite3.connect(db_path)
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
 

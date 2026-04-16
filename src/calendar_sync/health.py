@@ -12,12 +12,17 @@ _sync_interval: int = 300
 
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
-        if self.path == "/health":
-            self._handle_health()
-        elif self.path == "/status":
-            self._handle_status()
-        else:
-            self.send_response(404)
+        try:
+            if self.path == "/health":
+                self._handle_health()
+            elif self.path == "/status":
+                self._handle_status()
+            else:
+                self.send_response(404)
+                self.end_headers()
+        except Exception:
+            logger.exception("Health handler error")
+            self.send_response(500)
             self.end_headers()
 
     def _handle_health(self) -> None:
