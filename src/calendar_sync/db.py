@@ -164,3 +164,13 @@ class SyncDB:
             "SELECT * FROM sync_runs ORDER BY id DESC LIMIT 1"
         ).fetchone()
         return dict(row) if row else None
+
+    def recent_sync_runs(self, limit: int = 10) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM sync_runs ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def pair_count(self) -> int:
+        row = self.conn.execute("SELECT COUNT(*) as cnt FROM sync_pairs").fetchone()
+        return row["cnt"] if row else 0
