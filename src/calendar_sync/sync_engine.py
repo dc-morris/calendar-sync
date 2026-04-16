@@ -140,6 +140,7 @@ class SyncEngine:
                 created += 1
 
             self.db.expire_pending_changes()
+            self._refresh_events_table()
             self.db.complete_sync_run(run_id, "success", created, updated, deleted)
             logger.info(
                 "Sync complete: %d created, %d updated, %d deleted",
@@ -173,6 +174,46 @@ class SyncEngine:
         )
         logger.info("Propagated to iCloud: %s", gc_event.summary)
         return 1
+
+    def _refresh_events_table(self) -> None:
+        """Update the events table with current event details from all sync pairs."""
+        pairs = self.db.get_all_pairs()
+        now = datetime.now(timezone.utc)
+        start = now - timedelta(days=self.config.sync_lookback_days)
+        end = now + timedelta(days=self.config.sync_lookahead_days)
+
+        # Fetch fresh from both sources
+        try:
+            icloud_events = self.icloud.fetch_events(start, end)
+            google_events = self.google.fetch_events(start, end)
+        except Exception:
+            logger.warning("Failed to refresh events table, skipping")
+            return
+
+        icloud_by_uid = {e.icloud_uid: e for e in icloud_events if e.icloud_uid}
+        google_by_id = {e.google_event_id: e for e in google_events if e.google_event_id}
+
+        # Track which pair_ids we've seen
+        seen_pair_ids = set()
+        for pair in pairs:
+            event = icloud_by_uid.get(pair.icloud_uid) or google_by_id.get(pair.google_event_id)
+            if not event:
+                self.db.delete_event_by_pair(pair.id)
+                continue
+
+            seen_pair_ids.add(pair.id)
+            self.db.upsert_event(
+                pair_id=pair.id,
+                summary=event.summary,
+                start_time=event.start.isoformat(),
+                end_time=event.end.isoformat(),
+                is_all_day=event.is_all_day,
+                source_origin=pair.source_origin,
+                description=event.description,
+                location=event.location,
+                recurrence_rule=event.recurrence_rule,
+                status=event.status,
+            )
 
     def _send_alert(self, message: str) -> None:
         if not self.config.ntfy_url:

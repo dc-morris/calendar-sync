@@ -36,9 +36,26 @@ CREATE TABLE IF NOT EXISTS pending_changes (
     expires_at      TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS events (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    pair_id         INTEGER REFERENCES sync_pairs(id),
+    summary         TEXT NOT NULL,
+    description     TEXT,
+    location        TEXT,
+    start_time      TEXT NOT NULL,
+    end_time        TEXT NOT NULL,
+    is_all_day      INTEGER NOT NULL DEFAULT 0,
+    recurrence_rule TEXT,
+    status          TEXT NOT NULL DEFAULT 'CONFIRMED',
+    source_origin   TEXT,
+    updated_at      TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_sync_pairs_icloud ON sync_pairs(icloud_uid);
 CREATE INDEX IF NOT EXISTS idx_sync_pairs_google ON sync_pairs(google_event_id);
 CREATE INDEX IF NOT EXISTS idx_pending_target ON pending_changes(target_side, event_id);
+CREATE INDEX IF NOT EXISTS idx_events_start ON events(start_time);
+CREATE INDEX IF NOT EXISTS idx_events_pair ON events(pair_id);
 """
 
 
@@ -174,3 +191,57 @@ class SyncDB:
     def pair_count(self) -> int:
         row = self.conn.execute("SELECT COUNT(*) as cnt FROM sync_pairs").fetchone()
         return row["cnt"] if row else 0
+
+    def upsert_event(
+        self,
+        pair_id: int,
+        summary: str,
+        start_time: str,
+        end_time: str,
+        is_all_day: bool,
+        source_origin: str | None = None,
+        description: str | None = None,
+        location: str | None = None,
+        recurrence_rule: str | None = None,
+        status: str = "CONFIRMED",
+    ) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        existing = self.conn.execute(
+            "SELECT id FROM events WHERE pair_id = ?", (pair_id,)
+        ).fetchone()
+        if existing:
+            self.conn.execute(
+                """UPDATE events SET summary = ?, description = ?, location = ?,
+                   start_time = ?, end_time = ?, is_all_day = ?, recurrence_rule = ?,
+                   status = ?, source_origin = ?, updated_at = ?
+                   WHERE pair_id = ?""",
+                (summary, description, location, start_time, end_time,
+                 int(is_all_day), recurrence_rule, status, source_origin, now, pair_id),
+            )
+        else:
+            self.conn.execute(
+                """INSERT INTO events (pair_id, summary, description, location,
+                   start_time, end_time, is_all_day, recurrence_rule, status,
+                   source_origin, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (pair_id, summary, description, location, start_time, end_time,
+                 int(is_all_day), recurrence_rule, status, source_origin, now),
+            )
+        self.conn.commit()
+
+    def delete_event_by_pair(self, pair_id: int) -> None:
+        self.conn.execute("DELETE FROM events WHERE pair_id = ?", (pair_id,))
+        self.conn.commit()
+
+    def get_events(self, from_date: str | None = None, to_date: str | None = None) -> list[dict]:
+        query = "SELECT * FROM events WHERE 1=1"
+        params: list = []
+        if from_date:
+            query += " AND end_time >= ?"
+            params.append(from_date)
+        if to_date:
+            query += " AND start_time <= ?"
+            params.append(to_date)
+        query += " ORDER BY start_time ASC"
+        rows = self.conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
