@@ -1,0 +1,19 @@
+services:
+  calendar-sync:
+    build: ..
+    container_name: calendar-sync
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - calendar_sync_data:/data
+    networks:
+      - proxy
+
+volumes:
+  calendar_sync_data:
+    external: true
+    name: calendar_sync_data
+
+networks:
+  proxy:
+    external: true
