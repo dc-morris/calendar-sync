@@ -113,14 +113,18 @@ class ICloudClient:
     def update_event(self, icloud_uid: str, event: NormalizedEvent) -> None:
         """Update an existing iCloud event."""
         cal = self._get_calendar()
+        vcal = self._build_vcalendar(event, icloud_uid)
         try:
             existing = cal.event_by_uid(icloud_uid)
-            vcal = self._build_vcalendar(event, icloud_uid)
             existing.data = vcal
             existing.save()
             logger.info("Updated iCloud event: %s (%s)", event.summary, icloud_uid)
-        except caldav.error.NotFoundError:
-            logger.warning("iCloud event not found for update: %s", icloud_uid)
+        except (caldav.error.NotFoundError, caldav.error.ReportError) as e:
+            # UID lookup can fail with 412 Precondition Failed on iCloud —
+            # fall back to saving directly (CalDAV PUT with the same UID overwrites)
+            logger.warning("iCloud event_by_uid failed for %s (%s), saving directly", icloud_uid, e)
+            cal.save_event(vcal)
+            logger.info("Saved iCloud event directly: %s (%s)", event.summary, icloud_uid)
 
     def delete_event(self, icloud_uid: str) -> None:
         """Delete an event from iCloud."""
@@ -129,7 +133,7 @@ class ICloudClient:
             existing = cal.event_by_uid(icloud_uid)
             existing.delete()
             logger.info("Deleted iCloud event: %s", icloud_uid)
-        except caldav.error.NotFoundError:
+        except (caldav.error.NotFoundError, caldav.error.ReportError):
             logger.warning("iCloud event not found for deletion: %s", icloud_uid)
 
     def _build_vcalendar(self, event: NormalizedEvent, uid: str) -> str:
