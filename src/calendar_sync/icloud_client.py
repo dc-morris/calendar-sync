@@ -35,7 +35,15 @@ class ICloudClient:
 
     def fetch_events(self, start: datetime, end: datetime) -> list[NormalizedEvent]:
         cal = self._get_calendar()
-        results = cal.date_search(start=start, end=end, expand=False)
+        try:
+            results = cal.date_search(start=start, end=end, expand=False)
+        except Exception:
+            # Drop the cached calendar reference so the next cycle re-resolves
+            # from the principal. iCloud can silently invalidate a calendar URL
+            # when the calendar is renamed or flagged, causing REPORT queries
+            # to hang indefinitely against an otherwise healthy server.
+            self._calendar = None
+            raise
         events = []
         for item in results:
             try:
