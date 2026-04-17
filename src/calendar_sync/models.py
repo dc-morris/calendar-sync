@@ -1,7 +1,17 @@
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 import hashlib
 import json
+
+
+def _to_utc_iso(dt: datetime | date) -> str:
+    """Convert a datetime to UTC ISO string for consistent hashing.
+    Dates (all-day events) are returned as-is."""
+    if isinstance(dt, datetime):
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc)
+        return dt.isoformat()
+    return dt.isoformat()
 
 
 @dataclass
@@ -23,13 +33,15 @@ class NormalizedEvent:
     google_etag: str | None = None
 
     def content_hash(self) -> str:
-        """Hash of the fields that should trigger a sync when changed."""
+        """Hash of the fields that should trigger a sync when changed.
+        Times are normalized to UTC so the same moment always produces
+        the same hash regardless of timezone representation."""
         fields = {
             "summary": self.summary,
             "description": self.description or "",
             "location": self.location or "",
-            "start": self.start.isoformat(),
-            "end": self.end.isoformat(),
+            "start": _to_utc_iso(self.start),
+            "end": _to_utc_iso(self.end),
             "is_all_day": self.is_all_day,
             "recurrence_rule": self.recurrence_rule or "",
             "status": self.status,

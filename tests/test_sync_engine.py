@@ -164,6 +164,18 @@ def test_content_hash_stable_for_same_fields():
     assert e1.content_hash() == e2.content_hash()
 
 
+def test_content_hash_stable_across_timezones():
+    """Same moment in different timezone representations should hash the same."""
+    utc_start = datetime(2025, 6, 1, 10, 0, tzinfo=timezone.utc)
+    bst_start = datetime(2025, 6, 1, 11, 0, tzinfo=timezone(timedelta(hours=1)))
+    utc_end = datetime(2025, 6, 1, 12, 0, tzinfo=timezone.utc)
+    bst_end = datetime(2025, 6, 1, 13, 0, tzinfo=timezone(timedelta(hours=1)))
+
+    e1 = make_event(summary="Meeting", start=utc_start, end=utc_end)
+    e2 = make_event(summary="Meeting", start=bst_start, end=bst_end)
+    assert e1.content_hash() == e2.content_hash()
+
+
 def test_db_pending_changes(db):
     db.record_pending_change("gc-1", "google", "hash1", ttl_seconds=900)
     assert db.is_our_pending_change("google", "gc-1")
