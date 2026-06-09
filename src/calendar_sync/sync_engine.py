@@ -1,4 +1,5 @@
 import logging
+import time
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from calendar_sync.config import Settings
@@ -20,6 +21,8 @@ class SyncEngine:
             caldav_url=config.icloud_caldav_url,
             calendar_name=config.icloud_calendar_name,
         )
+        self._consecutive_failures = 0
+        self._last_alert_time = 0.0
         self.google = GoogleClient(
             client_id=config.google_client_id,
             client_secret=config.google_client_secret,
@@ -142,6 +145,7 @@ class SyncEngine:
             self.db.expire_pending_changes()
             self._refresh_events_table()
             self.db.complete_sync_run(run_id, "success", created, updated, deleted)
+            self._consecutive_failures = 0
             logger.info(
                 "Sync complete: %d created, %d updated, %d deleted",
                 created, updated, deleted,
@@ -150,6 +154,7 @@ class SyncEngine:
         except Exception as e:
             logger.exception("Sync failed")
             self.db.complete_sync_run(run_id, "error", created, updated, deleted, str(e))
+            self._consecutive_failures += 1
             self._send_alert(f"Calendar sync failed: {e}")
             raise
 
@@ -215,9 +220,21 @@ class SyncEngine:
                 status=event.status,
             )
 
+    ALERT_THRESHOLD = 3  # consecutive failures before alerting
+    ALERT_COOLDOWN = 3600  # seconds between repeat alerts once threshold is met
+
     def _send_alert(self, message: str) -> None:
         if not self.config.ntfy_url:
             return
+        if self._consecutive_failures < self.ALERT_THRESHOLD:
+            logger.debug("Alert suppressed (%d/%d failures): %s",
+                         self._consecutive_failures, self.ALERT_THRESHOLD, message)
+            return
+        now = time.time()
+        if now - self._last_alert_time < self.ALERT_COOLDOWN:
+            logger.debug("Alert suppressed (cooldown): %s", message)
+            return
+        self._last_alert_time = now
         try:
             req = urllib.request.Request(
                 self.config.ntfy_url,
