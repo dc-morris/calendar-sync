@@ -2,7 +2,7 @@ import json
 import logging
 import threading
 from datetime import datetime, timezone
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from calendar_sync.db import SyncDB
 
 logger = logging.getLogger(__name__)
@@ -269,7 +269,7 @@ def start_health_server(port: int, db: SyncDB, sync_interval: int = 300) -> None
     _db_ref = db
     _sync_interval = sync_interval
 
-    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", port), HealthHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     logger.info("Health server started on port %d", port)
