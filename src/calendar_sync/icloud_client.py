@@ -10,17 +10,35 @@ logger = logging.getLogger(__name__)
 class ICloudClient:
     def __init__(self, username: str, app_password: str, caldav_url: str, calendar_name: str):
         self.calendar_name = calendar_name
-        self.client = caldav.DAVClient(
-            url=caldav_url,
-            username=username,
-            password=app_password,
-        )
+        self._username = username
+        self._app_password = app_password
+        self._caldav_url = caldav_url
+        self._client: caldav.DAVClient | None = None
         self._calendar: caldav.Calendar | None = None
+
+    def _get_client(self) -> caldav.DAVClient:
+        if self._client is None:
+            self._client = caldav.DAVClient(
+                url=self._caldav_url,
+                username=self._username,
+                password=self._app_password,
+                timeout=60,
+            )
+        return self._client
+
+    def _reset_connection(self) -> None:
+        """Discard both the cached calendar and the underlying HTTP session."""
+        self._calendar = None
+        self._client = None
 
     def _get_calendar(self) -> caldav.Calendar:
         if self._calendar is None:
-            principal = self.client.principal()
-            calendars = principal.calendars()
+            try:
+                principal = self._get_client().principal()
+                calendars = principal.calendars()
+            except Exception:
+                self._reset_connection()
+                raise
             for cal in calendars:
                 if cal.name == self.calendar_name:
                     self._calendar = cal
@@ -38,11 +56,10 @@ class ICloudClient:
         try:
             results = cal.date_search(start=start, end=end, expand=False)
         except Exception:
-            # Drop the cached calendar reference so the next cycle re-resolves
-            # from the principal. iCloud can silently invalidate a calendar URL
-            # when the calendar is renamed or flagged, causing REPORT queries
-            # to hang indefinitely against an otherwise healthy server.
-            self._calendar = None
+            # Drop both the calendar and HTTP session so the next cycle gets a
+            # fresh connection. iCloud can silently invalidate a calendar URL or
+            # leave the connection pool in a broken state after a timeout.
+            self._reset_connection()
             raise
         events = []
         for item in results:
